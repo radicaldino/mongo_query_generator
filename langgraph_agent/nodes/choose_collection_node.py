@@ -1,0 +1,133 @@
+from langgraph_agent.state import AgentState
+from mcp_server.tools.mcp_langchain_tools import llm_with_mcp_tools, _list_collections
+import json
+import os
+import logging
+from langsmith import traceable
+
+log_flow = logging.getLogger("flow")
+log_llm = logging.getLogger("llm")
+log_mcp = logging.getLogger("mcp")
+logger = logging.getLogger("app")
+
+@traceable(name="choose_collection_node")
+async def choose_collection_node(state: AgentState) -> AgentState:
+    log_flow.info("NODE_START name=choose_collection db=%s", state.get("db"))
+    """Get available collections and select the most relevant ones using LLM with MCP tools"""
+    print(f"\n=== CHOOSE COLLECTION NODE ===")
+    print(f"Database: {state.get('db', 'None')}")
+    
+    # Check if db is set
+    if not state.get("db"):
+        result = {
+            "collections": [],
+            "target_collection": "",
+            "error": "No database selected"
+        }
+        print(f"Error: {result['error']}")
+        print("=== END CHOOSE COLLECTION NODE ===\n")
+        return result
+    
+    try:
+        alias = state["db"]
+        
+        # First, get the actual available collections
+        available_collections = await _list_collections(alias)
+        print(f"Available collections: {available_collections}")
+        
+        # System prompt for LLM with MCP tools
+        system = f"""
+        You can call tools to explore the MongoDB database for alias '{alias}'. 
+        Use list_collections (alias, database?) to see available collections.
+        Then optionally use collection_schema (alias, collection) to understand collection structure.
+        Return only JSON in the schema: {{"selected_collections": [...], "reasoning": "..."}}
+        
+        IMPORTANT: Only select collections from this list: {available_collections}
+        Do not select collections that don't exist in this database.
+        """
+        
+        user = f"""
+        User query: {state.get('input','')}
+        Parsed request: {state.get('parsed','')}
+        Goal: Select 1–3 relevant collections for the user's query.
+        
+        Available collections: {available_collections}
+        
+        First, call list_collections with alias='{alias}' to see what collections are available.
+        Then, optionally call collection_schema for collections that look relevant to understand their structure.
+        Finally, select the most relevant collections for the user's query.
+        
+        IMPORTANT: Only select from the available collections list above!
+        """
+        
+        print("Asking LLM to explore collections using MCP tools...")
+        ai = await llm_with_mcp_tools(system, user, max_steps=2)
+        content = (ai.content or "").strip()
+        
+        
+        try:
+            # Clean the response to extract JSON
+            if content.startswith("```json"): 
+                content = content[7:]
+            if content.endswith("```"): 
+                content = content[:-3]
+            content = content.strip()
+            
+            selection = json.loads(content)
+            selected_collections = selection.get("selected_collections", [])
+            reasoning = selection.get("reasoning", "No reasoning provided")
+            
+            print(f"Selected collections: {selected_collections}")
+            print(f"Reasoning: {reasoning}")
+            
+            # Validate that all selected collections actually exist
+            invalid_collections = [col for col in selected_collections if col not in available_collections]
+            if invalid_collections:
+                print(f"ERROR: LLM selected non-existent collections: {invalid_collections}")
+                print(f"Available collections: {available_collections}")
+                
+                # Redirect back to parse node with feedback
+                return {
+                    "collections": [],
+                    "error": f"Invalid collections selected: {invalid_collections}. Available: {available_collections}",
+                    "redirect_to_parse": True,
+                    "feedback": f"The LLM selected collections that don't exist: {invalid_collections}. Please choose from the available collections: {available_collections}"
+                }
+            
+            # Validate that we have at least one collection
+            if not selected_collections:
+                result = {
+                    "collections": [],
+                    "error": "No collections selected by LLM"
+                }
+                print(f"Error: {result['error']}")
+                print("=== END CHOOSE COLLECTION NODE ===\n")
+                return result
+            
+            
+            result = {
+                "collections": selected_collections,
+            }
+            
+            print(f"Output: {len(selected_collections)} collections selected")
+            print("=== END CHOOSE COLLECTION NODE ===\n")
+            return result
+            
+        except Exception as e:
+            # Fallback if LLM response parsing fails
+            result = {
+                "collections": [],
+                "error": f"LLM selection failed: {str(e)}"
+            }
+            print(f"Error: {result['error']}")
+            print("=== END CHOOSE COLLECTION NODE ===\n")
+            return result
+        
+    except Exception as e:
+        result = {
+            "collections": [],
+            "error": f"Failed to get collections: {str(e)}"
+        }
+        print(f"Error: {result['error']}")
+        print("=== END CHOOSE COLLECTION NODE ===\n")
+        return result
