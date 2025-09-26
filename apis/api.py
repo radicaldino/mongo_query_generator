@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 from fastapi import APIRouter, Depends, Request
 from typing import Optional, Dict, Any
 from config.database import get_db_aliases, get_db
@@ -6,37 +6,12 @@ from typing import Dict, Any
 from config.database import get_db_aliases, get_db
 from langgraph_agent.graph import build_graph
 from mcp_server.models.model import QueryRequest, AggregateRequest, FindRequest, GraphQueryRequest
-=======
-from fastapi import APIRouter, Depends, Request, HTTPException
-from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
-from config.database import get_db_aliases, get_db
-import os
-from typing import Dict, Any, List
-from config.database import get_db_aliases, get_db
-from openai import OpenAI
-from langgraph_agent.graph import build_graph
-from contextlib import AsyncExitStack
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from mcp_server.main import set_mcp_session
-from config.settings import settings
-from config.database import _parse_mapping
-from anyio import BrokenResourceError
-import asyncio
-from mcp_server.models.model import QueryRequest, AggregateRequest, FindRequest, GraphQueryRequest
-from langsmith import traceable
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
+
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/query")
 
-
-<<<<<<< HEAD
-=======
-
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 # Dependency to get MCP server from app state
 def get_mcp_server(request: Request):
     return request.app.state.mcp
@@ -132,10 +107,6 @@ async def get_database_info(db: Optional[str] = "Inventory", mcp = Depends(get_m
     return result
 
 
-<<<<<<< HEAD
-=======
-@traceable(name="graph_query_execution")
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 @router.post("/graph_query")
 async def process_graph_query(request: GraphQueryRequest):
     try:

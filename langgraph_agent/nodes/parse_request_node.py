@@ -7,10 +7,8 @@ import logging
 import re
 from utils import *
 from langsmith import traceable
-<<<<<<< HEAD
 import anyio
-=======
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
+
 
 log_flow = logging.getLogger("flow")
 
@@ -62,21 +60,18 @@ async def parse_request_node(state: AgentState) -> AgentState:
     
     {f"FEEDBACK FROM PREVIOUS ATTEMPT: {feedback}" if feedback else ""}
     
-<<<<<<< HEAD
+
     Your are a part of a MongoDB query builder. Your job is to parse the user's request and determine which database is most relevant,also the most relevant collections to be used in the query.
-=======
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
+
     Analyze the request and determine which database is most relevant.
     Use the relations context to understand:
     - Which collections exist in each database
     - How collections are connected via foreign keys
     - What each collection contains based on descriptions
     - Which database best matches the user's intent
-<<<<<<< HEAD
     - Also understand there are basic fields that need to be shown in the query, these are material_name, material_id, available_quantity, company_id, location_id, isActive, activeListing.
     - Choose the relevant collections on the basis of the user's intent and the basic fields that need to be shown in the query.
-=======
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
+
     - Choose only the collections that are available in the {json.dumps(all_relations, default=str, indent=2)}
     
     {f"IMPORTANT: {feedback}" if feedback else ""}
@@ -84,11 +79,9 @@ async def parse_request_node(state: AgentState) -> AgentState:
     Return ONLY a JSON response in this exact format:
     {{
         "selected_database": "DatabaseName",
-<<<<<<< HEAD
+
         "reasoning": "Why this database was selected based on the request and available collections/relations",
-=======
-        "reasoning": "Why this database was seleprint(json.dumps(all_relations, default=str, indent=2))cted based on the request and available collections/relations",
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
+
         "relevant_collections": ["collection1", "collection2", ...],
         "query_intent": "What the user wants to find/analyze",
         "suggested_relationships": ["collection1.collection2 via foreign_key", ...]
@@ -96,15 +89,11 @@ async def parse_request_node(state: AgentState) -> AgentState:
     
     Choose from these exact database names: {available_dbs}
     """
-<<<<<<< HEAD
     
     with anyio.CancelScope() as scope:
         response = llm.invoke(prompt)
         if scope.cancel_called:
             raise Exception(str({"error": "cancelled"}))
-=======
-    response = llm.invoke(prompt)
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
     
     try:
         # Extract JSON from response (handle code fences)
@@ -121,16 +110,13 @@ async def parse_request_node(state: AgentState) -> AgentState:
         # Validate the selection
         if selected_db not in available_dbs:
             print(f"LLM selected invalid database: {selected_db}, using fallback")
-<<<<<<< HEAD
             fallback_db = llm.invoke(f"""select the most relevant database from the available databases
             Available databases: {available_dbs}, on the basis of the user request and available collections/relations
             User request: {state['input']}
             Available collections/relations: {json.dumps(all_relations, default=str, indent=2)}
             Return Only a single database name""")
             selected_db = fallback_db.content.strip()
-=======
-            selected_db = available_dbs[0]
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
+
         
         print(f"Selected database: {selected_db}")
         print(f"Reasoning: {result.get('reasoning', 'No reasoning provided')}")
@@ -153,10 +139,7 @@ async def parse_request_node(state: AgentState) -> AgentState:
     result = {
         "parsed": response.content,
         "db": selected_db,
-<<<<<<< HEAD
-=======
-        "relations_context": all_relations
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
+
     }
     
     # Clear any redirect flags

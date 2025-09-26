@@ -2,13 +2,8 @@ from langgraph_agent.state import AgentState
 import asyncio, json
 from mcp_server.tools.mcp_langchain_tools import llm_with_mcp_tools, _collection_schema
 import logging
-<<<<<<< HEAD
 from langsmith import traceable
 import anyio
-=======
-import os
-from langsmith import traceable
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 
 
 log_flow = logging.getLogger("flow")
@@ -35,7 +30,6 @@ async def get_schema_node(state: AgentState) -> AgentState:
             return col, {"error": str(e)}
     results = await asyncio.gather(*[fetch(c) for c in collections])
     raw_schemas = {c: s for c, s in results}
-<<<<<<< HEAD
     all_empty = all(not (s or {}) for s in raw_schemas.values())
     if all_empty:
         probe_errors = []
@@ -149,28 +143,6 @@ async def get_schema_node(state: AgentState) -> AgentState:
         ai = await llm_with_mcp_tools(system, user, max_steps=3)
         if scope.cancel_called:
             raise Exception(str({"error": "cancelled"}))
-=======
-
-     # 2) Let LLM infer relations and request any extra live checks via MCP tools
-    system = (
-        f"You can analyze pre-fetched collection schemas and call tools to verify relations in real time "
-        f"for alias '{alias}'. Use collection_schema if you need more schema detail; use find_documents to sample fields. "
-        f"Return JSON only: "
-        f'{{"schemas": {{"<collection>": {{...}}}}, "relations": [{{"from": "...","field": "...","to": "...","confidence": 0-1}}], '
-        f'"notes": "..."}}'
-    )
-    user = (
-        f"User query: {state.get('input','')}\n"
-        f"Collections: {collections}\n"
-        f"Pre-fetched schemas (may be partial): {json.dumps(raw_schemas, default=str)[:4000]}\n"
-        f"Tasks:\n"
-        f"- Infer likely relations across these collections (match *_id, *ID, company_id, material_id, etc.).\n"
-        f"- If uncertain, call tools to fetch more evidence (e.g., sample docs, confirm field presence/types).\n"
-        f"- Output the merged schemas (use pre-fetched unless you discover better), detected relations.\n"
-    )
-
-    ai = await llm_with_mcp_tools(system, user, max_steps=2)
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
     content = (ai.content or "").strip()
     try:
         if content.startswith("```json"): content = content[7:]
@@ -184,8 +156,6 @@ async def get_schema_node(state: AgentState) -> AgentState:
         log_flow.info("NODE_ERROR name=get_schema error=%s", str(e))
         return {"schema": {}, "error": str(e)}
 
-
-<<<<<<< HEAD
    # Prefer LLM-merged schemas; keep the raw as reference
     normalized = {}
     for col in collections:
@@ -211,31 +181,10 @@ async def get_schema_node(state: AgentState) -> AgentState:
             }
 
     #this is being passed to the build_query_node.
-=======
-    # 3) Normalize to build_query_node’s expected structure
-    normalized = {}
-    for col, fields in raw_schemas.items():
-        if isinstance(fields, dict) and fields:
-            field_names = list(fields.keys())
-            normalized[col] = {
-                "schema": fields,
-                "total_fields": len(fields),
-                "field_names": field_names,
-            }
-        else:
-            normalized[col] = {
-                "schema": {},
-                "total_fields": 0,
-                "field_names": [],
-            }
-
-    # 4) Optional single LLM pass to infer relations/notes (keep simple)
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
     schema_catalog = {
         "collections": normalized,
         "total_collections": len(normalized),
         "database": alias,
-<<<<<<< HEAD
         "relations": relations,
         "notes": notes,
     }
@@ -246,11 +195,4 @@ async def get_schema_node(state: AgentState) -> AgentState:
     result["redirect_to_choose"] = False
     result["feedback"] = ""
     return result
-=======
-        "relations": [],
-        "notes": "",
-    }
-    print("=== END GET SCHEMA NODE ===\n")
-    log_flow.info("NODE_END name=get_schema schema=%s", schema_catalog)
-    return {"schema": schema_catalog}
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
+

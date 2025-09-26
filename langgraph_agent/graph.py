@@ -6,10 +6,6 @@ from langgraph_agent.nodes.get_schema_node import get_schema_node
 from langgraph_agent.nodes.build_query_node import build_query_node
 from langgraph_agent.nodes.execute_query_node import execute_query_node
 from langsmith import traceable
-<<<<<<< HEAD
-=======
-
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 import logging, os
 
 os.makedirs("./logs", exist_ok=True)
@@ -46,14 +42,9 @@ def should_redirect_to_parse(state: AgentState) -> str:
     else:
         return "get_schema"
 
-<<<<<<< HEAD
 def _route_after_get_schema(state: AgentState) -> str:
     return "choose_collection" if state.get("redirect_to_choose") else "build_query"
 
-
-=======
-@traceable(name="build_graph")
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 def build_graph():
     """Build the new linear graph with retry logic and redirect capability"""
     graph = StateGraph(AgentState)
@@ -79,15 +70,14 @@ def build_graph():
         }
     )
     
-<<<<<<< HEAD
+
     graph.add_conditional_edges(
         "get_schema",
         _route_after_get_schema,
         {"choose_collection": "choose_collection", "build_query": "build_query"},
     )
     
-=======
->>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
+
     graph.add_edge("get_schema", "build_query")
     graph.add_edge("build_query", "execute_query")
     
