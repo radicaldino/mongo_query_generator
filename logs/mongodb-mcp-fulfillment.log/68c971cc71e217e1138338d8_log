@@ -1,0 +1,2 @@
+{"t":{"$date":"2025-09-16T14:19:05.447Z"},"s":"I","c":"MONGODB-MCP","id":1000002,"ctx":"server","msg":"Server started with transport StdioServerTransport and agent runner mcp"}
+{"t":{"$date":"2025-09-16T14:19:05.545Z"},"s":"D1","c":"MONGODB-MCP","id":1002003,"ctx":"telemetry","msg":"Attempting to send 1 events (0 cached)"}

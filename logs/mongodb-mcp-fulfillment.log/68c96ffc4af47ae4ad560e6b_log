@@ -1,0 +1,7 @@
+{"t":{"$date":"2025-09-16T14:11:29.446Z"},"s":"I","c":"MONGODB-MCP","id":1000002,"ctx":"server","msg":"Server started with transport StdioServerTransport and agent runner mcp"}
+{"t":{"$date":"2025-09-16T14:11:29.587Z"},"s":"D1","c":"MONGODB-MCP","id":1002003,"ctx":"telemetry","msg":"Attempting to send 1 events (0 cached)"}
+{"t":{"$date":"2025-09-16T14:11:30.727Z"},"s":"D1","c":"MONGODB-MCP","id":1002004,"ctx":"telemetry","msg":"Sent 1 events successfully: [\n  {\n    \"timestamp\": \"2025-09-16T14:11:29.448Z\",\n    \"source\": \"mdbmcp\",\n    \"properties\": {\n      \"result\": \"success\",\n      \"duration_ms\": 21060,\n      \"component\": \"server\",\n      \"category\": \"other\",\n      \"command\": \"start\",\n      \"startup_time_ms\": 21060,\n      \"read_only_mode\": false,\n      \"disabled_tools\": []\n    }\n  }\n]"}
+{"t":{"$date":"2025-09-16T14:11:31.440Z"},"s":"I","c":"MONGODB-MCP","id":1000003,"ctx":"server","msg":"Server close requested"}
+{"t":{"$date":"2025-09-16T14:11:31.444Z"},"s":"D1","c":"MONGODB-MCP","id":1002003,"ctx":"telemetry","msg":"Attempting to send 0 events (0 cached)"}
+{"t":{"$date":"2025-09-16T14:11:31.772Z"},"s":"D1","c":"MONGODB-MCP","id":1002004,"ctx":"telemetry","msg":"Sent 0 events successfully: []"}
+{"t":{"$date":"2025-09-16T14:11:31.780Z"},"s":"D1","c":"MONGODB-MCP","id":1002003,"ctx":"telemetry","msg":"Attempting to send 1 events (0 cached)"}

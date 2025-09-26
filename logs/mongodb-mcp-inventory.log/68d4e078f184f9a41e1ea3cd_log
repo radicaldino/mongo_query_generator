@@ -1,0 +1,4 @@
+{"t":{"$date":"2025-09-25T06:26:00.297Z"},"s":"I","c":"MONGODB-MCP","id":1000002,"ctx":"server","msg":"Server started with transport StdioServerTransport and agent runner mcp"}
+{"t":{"$date":"2025-09-25T06:26:00.298Z"},"s":"D1","c":"MONGODB-MCP","id":1003001,"ctx":"tool","msg":"Executing tool list-collections"}
+{"t":{"$date":"2025-09-25T06:26:30.452Z"},"s":"E","c":"MONGODB-MCP","id":1004001,"ctx":"mongodbTool","msg":"Failed to connect to MongoDB instance using the connection string from the config: Error: Server selection timed out after 30000 ms"}
+{"t":{"$date":"2025-09-25T06:26:30.505Z"},"s":"E","c":"MONGODB-MCP","id":1003002,"ctx":"tool","msg":"Error executing list-collections: Error: Not connected to MongoDB."}

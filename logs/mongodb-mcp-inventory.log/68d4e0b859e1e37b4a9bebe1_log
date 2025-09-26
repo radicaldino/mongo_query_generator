@@ -1,0 +1,2 @@
+{"t":{"$date":"2025-09-25T06:27:04.081Z"},"s":"I","c":"MONGODB-MCP","id":1000002,"ctx":"server","msg":"Server started with transport StdioServerTransport and agent runner mcp"}
+{"t":{"$date":"2025-09-25T06:27:04.082Z"},"s":"D1","c":"MONGODB-MCP","id":1003001,"ctx":"tool","msg":"Executing tool list-collections"}

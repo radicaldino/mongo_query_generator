@@ -1,0 +1,1 @@
+{"t":{"$date":"2025-09-24T06:28:58.307Z"},"s":"I","c":"MONGODB-MCP","id":1000002,"ctx":"server","msg":"Server started with transport StdioServerTransport and agent runner mcp"}
