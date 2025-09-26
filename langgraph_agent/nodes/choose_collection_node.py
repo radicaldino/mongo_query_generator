@@ -1,9 +1,15 @@
 from langgraph_agent.state import AgentState
 from mcp_server.tools.mcp_langchain_tools import llm_with_mcp_tools, _list_collections
 import json
+<<<<<<< HEAD
 import logging
 from langsmith import traceable
 import anyio
+=======
+import os
+import logging
+from langsmith import traceable
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 
 log_flow = logging.getLogger("flow")
 log_llm = logging.getLogger("llm")
@@ -31,6 +37,13 @@ async def choose_collection_node(state: AgentState) -> AgentState:
     try:
         alias = state["db"]
         
+<<<<<<< HEAD
+=======
+        # First, get the actual available collections
+        available_collections = await _list_collections(alias)
+        print(f"Available collections: {available_collections}")
+        
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
         # System prompt for LLM with MCP tools
         system = f"""
         You can call tools to explore the MongoDB database for alias '{alias}'. 
@@ -38,13 +51,18 @@ async def choose_collection_node(state: AgentState) -> AgentState:
         Then optionally use collection_schema (alias, collection) to understand collection structure.
         Return only JSON in the schema: {{"selected_collections": [...], "reasoning": "..."}}
         
+<<<<<<< HEAD
         IMPORTANT:“First call list_collections for alias ‘{alias}’. Copy the tool’s returned array into discovered_collections. Only select from discovered_collections. Return strictly JSON: <discovered_collections: [...], selected_collections: [...], reasoning: '...'>”
+=======
+        IMPORTANT: Only select collections from this list: {available_collections}
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
         Do not select collections that don't exist in this database.
         """
         
         user = f"""
         User query: {state.get('input','')}
         Parsed request: {state.get('parsed','')}
+<<<<<<< HEAD
         Goal: Select 1-3 relevant collections for the user's query.
         
         
@@ -53,11 +71,21 @@ async def choose_collection_node(state: AgentState) -> AgentState:
         Then, optionally call collection_schema for collections that look relevant to understand their structure.
         Make your decision based on the User query and Parsed request , the collections you select will be used to build the query.
         Finally, select the most relevant collections for the user's query and parsed request.
+=======
+        Goal: Select 1–3 relevant collections for the user's query.
+        
+        Available collections: {available_collections}
+        
+        First, call list_collections with alias='{alias}' to see what collections are available.
+        Then, optionally call collection_schema for collections that look relevant to understand their structure.
+        Finally, select the most relevant collections for the user's query.
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
         
         IMPORTANT: Only select from the available collections list above!
         """
         
         print("Asking LLM to explore collections using MCP tools...")
+<<<<<<< HEAD
         with anyio.CancelScope() as scope:
             ai = await llm_with_mcp_tools(system, user, max_steps=2)
             if scope.cancel_called:
@@ -115,11 +143,74 @@ async def choose_collection_node(state: AgentState) -> AgentState:
             result = {
                 "collections": [],
                 "error": f"LLM selection failed: {str(e)}",
+=======
+        ai = await llm_with_mcp_tools(system, user, max_steps=2)
+        content = (ai.content or "").strip()
+        
+        
+        try:
+            # Clean the response to extract JSON
+            if content.startswith("```json"): 
+                content = content[7:]
+            if content.endswith("```"): 
+                content = content[:-3]
+            content = content.strip()
+            
+            selection = json.loads(content)
+            selected_collections = selection.get("selected_collections", [])
+            reasoning = selection.get("reasoning", "No reasoning provided")
+            
+            print(f"Selected collections: {selected_collections}")
+            print(f"Reasoning: {reasoning}")
+            
+            # Validate that all selected collections actually exist
+            invalid_collections = [col for col in selected_collections if col not in available_collections]
+            if invalid_collections:
+                print(f"ERROR: LLM selected non-existent collections: {invalid_collections}")
+                print(f"Available collections: {available_collections}")
+                
+                # Redirect back to parse node with feedback
+                return {
+                    "collections": [],
+                    "error": f"Invalid collections selected: {invalid_collections}. Available: {available_collections}",
+                    "redirect_to_parse": True,
+                    "feedback": f"The LLM selected collections that don't exist: {invalid_collections}. Please choose from the available collections: {available_collections}"
+                }
+            
+            # Validate that we have at least one collection
+            if not selected_collections:
+                result = {
+                    "collections": [],
+                    "error": "No collections selected by LLM"
+                }
+                print(f"Error: {result['error']}")
+                print("=== END CHOOSE COLLECTION NODE ===\n")
+                return result
+            
+            
+            result = {
+                "collections": selected_collections,
+            }
+            
+            print(f"Output: {len(selected_collections)} collections selected")
+            print("=== END CHOOSE COLLECTION NODE ===\n")
+            return result
+            
+        except Exception as e:
+            # Fallback if LLM response parsing fails
+            result = {
+                "collections": [],
+                "error": f"LLM selection failed: {str(e)}"
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
             }
             print(f"Error: {result['error']}")
             print("=== END CHOOSE COLLECTION NODE ===\n")
             return result
+<<<<<<< HEAD
 
+=======
+        
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
     except Exception as e:
         result = {
             "collections": [],
@@ -128,4 +219,7 @@ async def choose_collection_node(state: AgentState) -> AgentState:
         print(f"Error: {result['error']}")
         print("=== END CHOOSE COLLECTION NODE ===\n")
         return result
+<<<<<<< HEAD
 
+=======
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0

@@ -1,8 +1,17 @@
+<<<<<<< HEAD
 from langgraph_agent.state import AgentState
 import json
 import logging
 from langsmith import traceable
 import anyio
+=======
+from typing import TypedDict, Dict, Any, List, Optional
+from langgraph_agent.state import AgentState
+import asyncio
+import json
+import logging, os
+from langsmith import traceable
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 
 log_flow = logging.getLogger("flow")
 log_llm = logging.getLogger("llm")
@@ -61,11 +70,15 @@ async def execute_query_node(state: AgentState) -> AgentState:
         print(f"Is aggregate: {state.get('is_aggregate', False)}")
         
         from mcp_server.tools.mcp_langchain_tools import llm_with_mcp_tools
+<<<<<<< HEAD
         
         with anyio.CancelScope() as scope:
             ai = await llm_with_mcp_tools(system, user)
             if scope.cancel_called:
                 raise Exception(str({"error": "cancelled"}))
+=======
+        ai = await llm_with_mcp_tools(system, user)
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
         content = (ai.content or "").strip()
         
         print(f"LLM response: {content}")

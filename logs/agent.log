@@ -7000,6 +7000,7 @@ pipeline
 2025-09-23 12:11:53,382 INFO [llm] LLM TURN content_len=1036 tool_calls=[]
 2025-09-23 12:11:53,382 INFO [llm] LLM FINAL content_preview={"result":[{"_id":"rg-7950","total_available_quantity":1110,"material_name":"Buttons","sku":"Bo001"},{"_id":"rg-7946","total_available_quantity":1020,"material_name":"Leather","sku":"l001"},{"_id":"rg-7949","total_available_quantity":370,"material_name":"Cotton thread roll","sku":"rol003"},{"_id":"rg-7947","total_available_quantity":370,"material_name":"shirt materials","sku":"Shirt002"},{"_id":"r
 2025-09-23 12:11:53,382 INFO [flow] NODE_END name=execute_query result_summary=Top ten products for company ID 1555 based on available quantity.
+<<<<<<< HEAD
 2025-09-24 06:56:10,529 INFO [flow] NODE_START parse_request_node state_keys={'input': 'show me all ten top products in company with id 1555'}
 2025-09-24 06:56:14,544 INFO [httpx] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
 2025-09-24 06:56:14,587 INFO [flow] NODE_END parse_request_node result=['parsed', 'db']
@@ -10203,3 +10204,5 @@ RuntimeError: MCP call failed for Inventory (list-collections): unhandled errors
 2025-09-26 11:37:52,070 INFO [llm] LLM TURN content_len=149 tool_calls=[]
 2025-09-26 11:37:52,071 INFO [llm] LLM FINAL content_preview={"result":{},"query_type":"aggregate","summary":"No active products with available quantities for company ID 1335 at the Hover location were found."}
 2025-09-26 11:37:52,071 INFO [flow] NODE_END name=execute_query result_summary=No active products with available quantities for company ID 1335 at the Hover location were found.
+=======
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0

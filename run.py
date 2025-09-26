@@ -3,7 +3,11 @@ import asyncio, os
 from contextlib import AsyncExitStack
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+<<<<<<< HEAD
 from mcp_server.mcp_session_global import set_mcp_session
+=======
+from mcp_server.main import set_mcp_session
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 from langgraph_agent.graph import build_graph
 from config.settings import settings
 from config.database import _parse_mapping

@@ -1,16 +1,33 @@
 # langgraph_agent/nodes/mcp_langchain_tools.py
+<<<<<<< HEAD
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 from langchain.tools import StructuredTool
+=======
+import collections
+from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, Field
+from langchain.tools import StructuredTool
+from mcp_server.main import get_mcp_session
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 from config.database import db_name_for_alias
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from config.settings import settings
+<<<<<<< HEAD
 from config.database import db_name_for_alias
 from mcp_server.session_manager import McpSessionManager
 import anyio
 import json
 import logging
+=======
+
+import json
+import re
+
+import logging, os
+from datetime import datetime, timezone
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 
 log_flow = logging.getLogger("flow")
 log_llm = logging.getLogger("llm")
@@ -18,6 +35,7 @@ log_mcp = logging.getLogger("mcp")
 logger = logging.getLogger("app")
 
 
+<<<<<<< HEAD
 
 _SESSION_MGR: McpSessionManager | None = None
 
@@ -43,6 +61,8 @@ async def call_tool_with_timeout(mgr: McpSessionManager, alias: str, tool_name: 
 
 
 
+=======
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
 async def _as_json(result: Any) -> Any:
     print(f"DEBUG: _as_json called with type: {type(result)}")
     
@@ -165,11 +185,18 @@ class AggregateArgs(BaseModel):
     database: Optional[str] = None
 
 async def _list_collections(alias: str, database: Optional[str] = None):
+<<<<<<< HEAD
     if not _SESSION_MGR:
         raise RuntimeError(" MCP session manager not initialized")
     db = database or db_name_for_alias(alias)
     log_mcp.info("MCP_CALL tool=list-collections alias=%s db=%s", alias, db)
     res = await call_tool_with_timeout(_SESSION_MGR, alias, "list-collections", {"database": db}, timeout_s=20.0)
+=======
+    session = get_mcp_session(alias)
+    db = database or db_name_for_alias(alias)
+    log_mcp.info("MCP_CALL tool=list-collections alias=%s db=%s", alias, db)
+    res = await session.call_tool("list-collections", {"database": db})
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
     data = await _as_json(res)
     log_mcp.info("MCP_RESULT tool=list-collections size=%s preview=%s", (len(data) if isinstance(data, list) else 'n/a'), str(data)[:400])
     if isinstance(data, list):
@@ -177,11 +204,18 @@ async def _list_collections(alias: str, database: Optional[str] = None):
     return (data or {}).get("collections") or (data or {}).get("result") or []
 
 async def _collection_schema(alias: str, collection: str, database: Optional[str] = None):
+<<<<<<< HEAD
     if not _SESSION_MGR:
         raise RuntimeError("Persistent MCP session manager not initialized")
     db = database or db_name_for_alias(alias)
     log_mcp.info("MCP_CALL tool=collection-schema alias=%s db=%s collection=%s", alias, db, collection)
     res = await call_tool_with_timeout(_SESSION_MGR, alias, "collection-schema", {"database": db, "collection": collection}, timeout_s=25.0)
+=======
+    session = get_mcp_session(alias)
+    db = database or db_name_for_alias(alias)
+    log_mcp.info("MCP_CALL tool=collection-schema alias=%s db=%s collection=%s", alias, db, collection)
+    res = await session.call_tool("collection-schema", {"database": db, "collection": collection})
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
     data = await _as_json(res)
     log_mcp.info("MCP_RESULT tool=collection-schema preview=%s", str(data)[:400])
     return data or {}
@@ -191,8 +225,12 @@ async def _find(alias: str, collection: str, database: Optional[str] = None,
                 projection: Optional[Dict[str, int]] = None,
                 sort: Optional[Dict[str, int]] = None,
                 limit: int = 100):
+<<<<<<< HEAD
     if not _SESSION_MGR:
         raise RuntimeError("Persistent MCP session manager not initialized")
+=======
+    session = get_mcp_session(alias)
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
     db = database or db_name_for_alias(alias)
     norm_filter = _normalize_filter_dates(filter or {})
     payload = {"database": db, "collection": collection, "filter": norm_filter, "limit": limit}
@@ -200,12 +238,22 @@ async def _find(alias: str, collection: str, database: Optional[str] = None,
         payload["projection"] = projection
     if sort is not None:
         payload["sort"] = sort
+<<<<<<< HEAD
+=======
+
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
     log_mcp.info("MCP_CALL tool=find alias=%s db=%s collection=%s filter=%s limit=%s proj=%s sort=%s",
                  alias, db, collection, payload["filter"], limit,
                  ("set" if "projection" in payload else "omitted"),
                  ("set" if "sort" in payload else "omitted"))
+<<<<<<< HEAD
     res = await call_tool_with_timeout(_SESSION_MGR, alias, "find", payload, timeout_s=25.0)
     data = await _as_json(res)
+=======
+    res = await session.call_tool("find", payload)
+    data = await _as_json(res)
+    # If server returned only a text message (e.g., "Found 0 documents"), data will be None.
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
     if data is None:
         return {"documents": []}
     if isinstance(data, list):
@@ -213,11 +261,18 @@ async def _find(alias: str, collection: str, database: Optional[str] = None,
     return data or {}
 
 async def _aggregate(alias: str, collection: str, pipeline: List[Dict[str, Any]], database: Optional[str] = None):
+<<<<<<< HEAD
     if not _SESSION_MGR:
         raise RuntimeError("Persistent MCP session manager not initialized")
     db = database or db_name_for_alias(alias)
     log_mcp.info("MCP_CALL tool=aggregate alias=%s db=%s collection=%s pipeline_len=%s", alias, db, collection, len(pipeline or []))
     res = await call_tool_with_timeout(_SESSION_MGR, alias, "aggregate", {"database": db, "collection": collection, "pipeline": pipeline}, timeout_s=30.0)
+=======
+    session = get_mcp_session(alias)
+    db = database or db_name_for_alias(alias)
+    log_mcp.info("MCP_CALL tool=aggregate alias=%s db=%s collection=%s pipeline_len=%s", alias, db, collection, len(pipeline or []))
+    res = await session.call_tool("aggregate", {"database": db, "collection": collection, "pipeline": pipeline})
+>>>>>>> 223c614a58b7b3575c30fb085cd8d3454533adf0
     data = await _as_json(res)
     log_mcp.info("MCP_RESULT tool=aggregate preview=%s", str(data)[:400])
     if isinstance(data, list):
