@@ -83,6 +83,29 @@ async def execute_query_node(state: AgentState) -> AgentState:
             result = response_data.get("result", {})
             query_type = response_data.get("query_type", "unknown")
             summary = response_data.get("summary", "No summary provided")
+            no_docs = False
+            
+            if isinstance(result, dict):
+                docs = result.get("documents")
+                if isinstance(docs, list) and len(docs) == 0:
+                    no_docs = True
+                elif result == {}:
+                    no_docs = True
+            elif isinstance(result, list) and len(result) == 0:
+                no_docs = True
+
+            no_results_phrase = "No results found" in (summary or "").lower()
+
+            if no_docs or no_results_phrase:
+                fb = ("Previous query returned no results. Try rebuilding the query using the same context, "
+                "consider alternative collections/joins from relations, and relax/adjust filters if reasonable. "
+                "Keep the supply-chain defaults unless the user overrides them."
+                )
+                return {
+                    "error": summary or "No results found",
+                    "feedback": fb,
+                    "retry_count": state.get("retry_count", 0) + 1
+                }
             
             print(f"Query executed successfully using {query_type}")
             print(f"Summary: {summary}")
