@@ -1,7 +1,8 @@
-# langgraph_agent/nodes/choose_and_enrich_node.py
+
 from typing import Dict, Any, List
 from langgraph_agent.state import AgentState
 from config.settings import settings
+from mcp_server.session_manager import RequestScopedSessionManager
 from mcp_server.tools.mcp_langchain_tools import llm_with_mcp_tools
 import json
 import re
@@ -29,6 +30,16 @@ async def _json_from_ai_content(text: str) -> Dict[str, Any]:
 @traceable(name="choose_collection_schema_node")
 async def choose_collection_schema_node(state: AgentState) -> AgentState:
     print("\n=== CHOOSE COLLECTION SCHEMA NODE ===")
+    
+    # Get session manager from state
+    mgr = state.get("mcp_session_manager")
+    if not mgr:
+        return {
+            "error": "MCP session manager not found",
+            "redirect_to_parse": True,
+            "feedback": "MCP session manager not found",
+        }
+    
     alias = state.get("db") or "Inventory"
     parsed_text = state.get("parsed") or ""
     hinted = []
@@ -46,7 +57,6 @@ async def choose_collection_schema_node(state: AgentState) -> AgentState:
         "You can call tools in real time to confirm schema knowledge: "
         "- Use list_collections(alias, database?) to see what collections are available. "
         "- Use collection_schema(alias, collection) to inspect fields and types. "
-        "- Use find_documents(alias, collection, filter, limit) to confirm field presence, formats, and example values. "
         "\n\n"
         "When producing output: "
         "- Always call list_collections(alias) first and copy the returned array into discovered_collections. "
@@ -179,7 +189,13 @@ async def choose_collection_schema_node(state: AgentState) -> AgentState:
             system = base_system
             user = build_user(extra_feedback=feedback)
 
-            ai = await llm_with_mcp_tools(system, user, max_steps=5)
+           
+            
+            with anyio.CancelScope() as scope:
+                ai = await llm_with_mcp_tools(mgr, system, user)
+                if scope.cancel_called:
+                    raise Exception(str({"error": "cancelled"}))
+
             data = await _json_from_ai_content(ai.content or "")
             check = normalize_and_check(data)
 

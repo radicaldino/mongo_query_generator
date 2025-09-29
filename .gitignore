@@ -1,0 +1,61 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment and secrets
+.env
+.env.*
+*.env
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build / Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing / Type checking / Linting
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/
+.pytype/
+.ruff_cache/
+
+# Logs
+logs/
+*.log
+
+# Local tooling / workspace
+.cursor/
+*.sqlite
+*.sqlite3
+
+# Cache
+.cache/
+
+# Node (if any frontend)
+node_modules/
+
+# Docker
+*.pid
+
+# Project specific
+# MCP server logs are in logs/ already covered
+# Ignore any local data dumps if added
+data/

@@ -63,6 +63,7 @@ async def parse_request_node(state: AgentState) -> AgentState:
 
     Your are a part of a MongoDB query builder. Your job is to parse the user's request and determine which database is most relevant,also the most relevant collections to be used in the query.
 
+    First, Understand the user's request and their intent on what they want to find/analyze.pay attention to the basic details in the user's request and define the query intent.
     Analyze the request and determine which database is most relevant.
     Use the relations context to understand:
     - Which collections exist in each database

@@ -6,7 +6,7 @@ from typing import Dict, Any
 from config.database import get_db_aliases, get_db
 from langgraph_agent.graph import build_graph
 from mcp_server.models.model import QueryRequest, AggregateRequest, FindRequest, GraphQueryRequest
-
+from mcp_server.session_manager import create_request_session_manager
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
@@ -109,13 +109,27 @@ async def get_database_info(db: Optional[str] = "Inventory", mcp = Depends(get_m
 
 @router.post("/graph_query")
 async def process_graph_query(request: GraphQueryRequest):
+    mgr = None
     try:
         print(f"Processing query: {request.query}")
+        from mcp_server.session_manager import create_request_session_manager
+        mgr = create_request_session_manager()  # don't call start(); lazy-start happens on first tool use
+
         graph = build_graph()
-        ret = await graph.ainvoke({"input": request.query}, return_state=True)
+        # pass the mgr into initial state
+        ret = await graph.ainvoke({"input": request.query, "mcp_session_manager": mgr}, return_state=True)
+
         final_result = ret.get("result") or ret.get("query") or ret if isinstance(ret, dict) else ret
         print(f"Final processed result: {final_result}")
         return JSONResponse(content=jsonable_encoder({"input": request.query, "result": final_result}))
     except Exception as e:
         print(f"Graph execution failed: {e}")
         return JSONResponse(status_code=500, content=jsonable_encoder({"input": request.query, "error": str(e)}))
+    finally:
+        if mgr:
+            try:
+                print(f"Stopping MCP session")
+                await mgr.stop()
+                print(f"MCP session stopped")
+            except Exception as e:
+                print(f"Error stopping MCP session: {e}")

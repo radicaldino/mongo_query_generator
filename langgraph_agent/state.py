@@ -1,4 +1,5 @@
 from typing import TypedDict, Dict, Any, List, Optional
+from mcp_server.session_manager import RequestScopedSessionManager
 
 class AgentState(TypedDict, total=False):
     # Input
@@ -26,4 +27,7 @@ class AgentState(TypedDict, total=False):
     redirect_to_choose: bool
     redirect_to_parse: bool
     feedback: str
+    
+    # Session management
+    mcp_session_manager: Optional[RequestScopedSessionManager]
 

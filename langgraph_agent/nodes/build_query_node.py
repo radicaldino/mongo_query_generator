@@ -22,6 +22,7 @@ async def build_query_node(state: AgentState) -> AgentState:
     print(f"Selected collection: {state.get('collections', [])}")
     
     alias = state.get('db', 'Inventory')
+    mgr = state.get('mcp_session_manager')
     
     schemas_obj = state.get('schemas', {}) or {}
     relations = schemas_obj.get('relations') or []
@@ -31,14 +32,14 @@ async def build_query_node(state: AgentState) -> AgentState:
     # 1) Discover actual database structure first
     try:
         print("Discovering actual database structure...")
-        available_collections = await _list_collections(alias)
+        available_collections = await _list_collections(mgr, alias)
         available_collections = list(available_collections or [])
         print(f"Actual collections in database: {available_collections}")
     
         sample_schemas = {}
         for collection in available_collections:  # Sample all collections
             try:
-                schema = await _collection_schema(alias, collection)
+                schema = await _collection_schema(mgr, alias, collection)
                 sample_schemas[collection] = schema
             except Exception as e:
                 print(f"Failed to get schema for {collection}: {e}")
@@ -74,7 +75,7 @@ async def build_query_node(state: AgentState) -> AgentState:
                 User request:
                 {state.get('parsed', '')}
 
-                Return only a valid JSON query object that the executor can run directly.
+                Return only a valid JSON query object that the executor can run directly.Do not add any other text or explanation.
                 """
     else:
         print("Building initial query...")

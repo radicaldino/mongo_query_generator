@@ -8,10 +8,10 @@ from apis.api import router as api_router
 from config.settings import settings 
 import os
 import logging
+from mcp_server.tools.mcp_langchain_tools import _find, _list_collections, _collection_schema, _aggregate
 from config.database import _parse_mapping, alias_for_db, db_name_for_alias
-from mcp_server.tools.mcp_langchain_tools import _find, _aggregate, _collection_schema, _list_collections
-from mcp_server.session_manager import McpSessionManager
-from mcp_server.tools.mcp_langchain_tools import set_session_manager
+from mcp_server.session_manager import create_request_session_manager
+
 
 
 # Initialize LangSmith
@@ -46,53 +46,65 @@ MCP_URIS = {
 if not any(MCP_URIS.values()):
     MCP_URIS = _parse_mapping(settings.MONGO_URIS or "")
 
+
 class McpFacade:
-    """Facade that uses global MCP sessions for REST API endpoints"""
+    """Facade that uses per-request MCP sessions for REST API endpoints"""
     
     async def get_all_collection_list(self, db: str):
         alias = alias_for_db(db)
-        return await _list_collections(alias, database=db_name_for_alias(alias))
+        mgr = create_request_session_manager()
+        async with mgr.session_context([alias]):
+            return await _list_collections(mgr, alias, database=db_name_for_alias(alias))
 
     async def get_schema(self, collection: str, db: str):
         alias = alias_for_db(db)
-        return await _collection_schema(alias, collection, database=db_name_for_alias(alias))
+        mgr = create_request_session_manager()
+        async with mgr.session_context([alias]):
+            return await _collection_schema(mgr, alias, collection, database=db_name_for_alias(alias))
 
     async def find(self, db: str, collection: str, filters=None, projection=None, sort=None, skip: int = 0, limit: int = 100):
         alias = alias_for_db(db)
-        # Note: skip is not supported in current _find wrapper
-        return await _find(alias, collection, database=db_name_for_alias(alias),
-                          filter=filters, projection=projection, sort=sort, limit=limit)
+        mgr = create_request_session_manager()
+        async with mgr.session_context([alias]):
+            # Note: skip is not supported in current _find wrapper
+            return await _find(mgr, alias, collection, database=db_name_for_alias(alias),
+                               filter=filters, projection=projection, sort=sort, limit=limit)
 
     async def aggregate(self, db: str, collection: str, pipeline: list):
         alias = alias_for_db(db)
-        return await _aggregate(alias, collection, pipeline, database=db_name_for_alias(alias))
+        mgr = create_request_session_manager()
+        async with mgr.session_context([alias]):
+            return await _aggregate(mgr, alias, collection, pipeline, database=db_name_for_alias(alias))
 
     async def execute_mongo_query(self, db: str, collection: str, filters=None, projection=None, sort=None, limit: int = 100):
         return await self.find(db, collection, filters, projection, sort, 0, limit)
 
     async def count_documents(self, collection: str, filters=None, db: str = "Inventory"):
         alias = alias_for_db(db)
-        # Simple count using find with limit 0
-        result = await _find(alias, collection, database=db_name_for_alias(alias),
-                           filter=filters, limit=0)
-        return {"count": len(result.get("documents", []))}
+        mgr = create_request_session_manager()
+        async with mgr.session_context([alias]):
+            result = await _find(mgr, alias, collection, database=db_name_for_alias(alias),
+                                 filter=filters, limit=0)
+            return {"count": len(result.get("documents", []))}
 
     async def distinct_values(self, collection: str, field: str, filters=None, db: str = "Inventory"):
         alias = alias_for_db(db)
-        # Get all docs and extract distinct values
-        result = await _find(alias, collection, database=db_name_for_alias(alias),
-                           filter=filters, limit=1000)
-        docs = result.get("documents", [])
-        distinct = list(set(doc.get(field) for doc in docs if field in doc))
-        return {"distinct_values": distinct}
+        mgr = create_request_session_manager()
+        async with mgr.session_context([alias]):
+            result = await _find(mgr, alias, collection, database=db_name_for_alias(alias),
+                                 filter=filters, limit=1000)
+            docs = result.get("documents", [])
+            distinct = list(set(doc.get(field) for doc in docs if field in doc))
+            return {"distinct_values": distinct}
 
     async def sample_collection(self, collection: str, size: int = 5, db: str = "Inventory"):
         alias = alias_for_db(db)
-        result = await _find(alias, collection, database=db_name_for_alias(alias), limit=size)
-        return result
+        mgr = create_request_session_manager()
+        async with mgr.session_context([alias]):
+            result = await _find(mgr, alias, collection, database=db_name_for_alias(alias), limit=size)
+            return result
 
     async def validate_query(self, db: str, collection: str, filters):
-        # Simple validation - try to run the query
         try:
             await self.find(db, collection, filters, limit=1)
             return {"valid": True, "message": "Query is valid"}
@@ -101,39 +113,26 @@ class McpFacade:
 
     async def get_db_info(self, db: str = "Inventory"):
         alias = alias_for_db(db)
-        collections = await _list_collections(alias, database=db_name_for_alias(alias))
-        return {
-            "database": db,
-            "alias": alias,
-            "collections": collections,
-            "total_collections": len(collections)
-        }
+        mgr = create_request_session_manager()
+        async with mgr.session_context([alias]):
+            collections = await _list_collections(mgr, alias, database=db_name_for_alias(alias))
+            return {
+                "database": db,
+                "alias": alias,
+                "collections": collections,
+                "total_collections": len(collections)
+            }
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    alias_env: dict[str, dict[str, str]] = {}
-    for alias, uri in MCP_URIS.items():
-        if not uri:
-            continue
-        env = os.environ.copy()
-        env["MDB_MCP_CONNECTION_STRING"] = uri
-        env.setdefault("MDB_MCP_LOG_PATH", f"./logs/mongodb-mcp-{alias.lower()}.log")
-        alias_env[alias] = env
-
-    mgr = McpSessionManager(alias_env)
-    await mgr.start()
-    set_session_manager(mgr)
     app.state.mcp = McpFacade()
 
     print(f"Available database aliases: {list(MCP_URIS.keys())}")
     try:
         yield
     finally:
-        try:
-            await mgr.stop()
-        finally:
-            set_session_manager(None)
-
+         pass
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
@@ -156,9 +155,7 @@ async def http_exception_handler(request, exc):
 
 @app.get("/mcp/health")
 def mcp_health():
-    mgr = getattr(app.state, "mcp_mgr", None)
-    alive = list(mgr.sessions.keys()) if mgr else []
-    return {"aliases": alive}
+    return {"aliases": [k for k, v in MCP_URIS.items() if v]}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=True)

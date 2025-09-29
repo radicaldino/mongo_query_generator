@@ -3,6 +3,7 @@ import json
 import logging
 from langsmith import traceable
 import anyio
+from mcp_server.tools.mcp_langchain_tools import llm_with_mcp_tools
 
 log_flow = logging.getLogger("flow")
 log_llm = logging.getLogger("llm")
@@ -24,6 +25,13 @@ async def execute_query_node(state: AgentState) -> AgentState:
     log_flow.info("NODE_START name=execute_query db=%s is_aggregate=%s", state.get("db"), state.get("is_aggregate"))
     print(f"\n=== EXECUTE QUERY NODE ===")
     print(f"Input state: {state}")
+
+    mgr = state.get("mcp_session_manager")
+    if not mgr:
+        return {
+            "error": "MCP session manager not found",
+            "retry_count": state.get("retry_count", 0) + 1
+        }
     
     try:
         alias = state["db"]
@@ -60,10 +68,10 @@ async def execute_query_node(state: AgentState) -> AgentState:
         print(f"Primary collection: {primary_collection}")
         print(f"Is aggregate: {state.get('is_aggregate', False)}")
         
-        from mcp_server.tools.mcp_langchain_tools import llm_with_mcp_tools
+        
         
         with anyio.CancelScope() as scope:
-            ai = await llm_with_mcp_tools(system, user)
+            ai = await llm_with_mcp_tools(mgr,system, user)
             if scope.cancel_called:
                 raise Exception(str({"error": "cancelled"}))
 

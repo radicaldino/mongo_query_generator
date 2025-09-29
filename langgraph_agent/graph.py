@@ -4,6 +4,7 @@ from langgraph_agent.nodes.parse_request_node import parse_request_node
 from langgraph_agent.nodes.choose_collection_schema_node import choose_collection_schema_node
 from langgraph_agent.nodes.build_query_node import build_query_node
 from langgraph_agent.nodes.execute_query_node import execute_query_node
+from mcp_server.session_manager import create_request_session_manager
 from langsmith import traceable
 import logging, os
 
@@ -32,27 +33,25 @@ def should_retry(state: AgentState) -> str:
 
 def _route_after_choose_collection_schema(state: AgentState) -> str:
     if state.get("redirect_to_parse"):
-        log_flow.info("ROUTING choose_and_enrich -> parse_request (feedback present)")
+        log_flow.info("ROUTING choose_collection_schema -> parse_request (feedback present)")
         return "parse_request"
     if state.get("redirect_to_choose"):
-        log_flow.info("ROUTING choose_and_enrich -> choose_and_enrich (retry selection/schema)")
-        return "choose_and_enrich"
+        log_flow.info("ROUTING choose_collection_schema -> choose_collection_schema (retry selection/schema)")
+        return "choose_collection_schema"
     return "build_query"
 
 def build_graph():
-    """Build the graph with merged choose+schema node"""
     graph = StateGraph(AgentState)
-    
-    # Nodes
+
+    # Nodes (no session_init / session_cleanup)
     graph.add_node("parse_request", parse_request_node)
     graph.add_node("choose_collection_schema", choose_collection_schema_node)
     graph.add_node("build_query", build_query_node)
     graph.add_node("execute_query", execute_query_node)
-    
+
     # Flow
     graph.set_entry_point("parse_request")
     graph.add_edge("parse_request", "choose_collection_schema")
-
     graph.add_conditional_edges(
         "choose_collection_schema",
         _route_after_choose_collection_schema,
@@ -62,16 +61,13 @@ def build_graph():
             "build_query": "build_query",
         },
     )
-
     graph.add_edge("build_query", "execute_query")
-
     graph.add_conditional_edges(
         "execute_query",
         should_retry,
         {
             "end": END,
-            "retry": "build_query"
-        }
+            "retry": "build_query",
+        },
     )
-    
     return graph.compile()
