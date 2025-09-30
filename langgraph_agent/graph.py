@@ -40,6 +40,17 @@ def _route_after_choose_collection_schema(state: AgentState) -> str:
         return "choose_collection_schema"
     return "build_query"
 
+def _route_after_execute(state: AgentState) -> str:
+    if state.get("redirect_to_parse"):
+        return "parse_request"
+    if state.get("redirect_to_choose"):
+        return "choose_collection_schema"
+    if not state.get("error"):
+        return "end"
+    if state.get("retry_count", 0) >= 5:
+        return "end"
+    return "build_query"
+
 def build_graph():
     graph = StateGraph(AgentState)
 
@@ -64,10 +75,12 @@ def build_graph():
     graph.add_edge("build_query", "execute_query")
     graph.add_conditional_edges(
         "execute_query",
-        should_retry,
+        _route_after_execute,
         {
             "end": END,
-            "retry": "build_query",
+            "build_query": "build_query",
+            "parse_request": "parse_request",
+            "choose_collection_schema": "choose_collection_schema",
         },
     )
     return graph.compile()

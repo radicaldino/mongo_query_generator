@@ -51,32 +51,72 @@ async def build_query_node(state: AgentState) -> AgentState:
 
     if "error" in state and state["error"]:
         print(f"Retry mode - Previous error: {state['error']}")
-        previous_query = state.get("query", "None")
+        debug_info = state.get("debug_info", {})
+        previous_query = state.get("query", {})
+        feedback_text = state.get("feedback", "")
+
+        feedback_details = []
+        if debug_info:
+            if isinstance(previous_query, dict) and previous_query.get("is_aggregate"):
+                empty_after = debug_info.get("empty_after_stage")
+                if empty_after is not None:
+                    failed_stage = None
+                    try:
+                        failed_stage = (previous_query.get("pipeline") or [])[empty_after]
+                    except Exception:
+                        pass
+                    feedback_details.append(f"Pipeline emptied after stage index {empty_after}.")
+                    if failed_stage:
+                        feedback_details.append(f"Failed stage content: {json.dumps(failed_stage, default=str)}")
+            err_list = debug_info.get("errors") or []
+            for e in err_list:
+                feedback_details.append(f"Execution error: {e}")
+
+        detailed_feedback = "\n".join([t for t in [feedback_text] + feedback_details if t]) or "Refine filters/joins to return non-empty results."
+
+        # inside retry branch (you already compute: debug_info, previous_query, feedback_text)
+        relax_hint = ""
+        empty_after = None
+        if isinstance(debug_info, dict):
+            empty_after = debug_info.get("empty_after_stage")
+        if empty_after == 0:
+            relax_hint = (
+                "\nIMPORTANT FIX:\n"
+                "- Your first stage ($match) returned zero documents. Start with ONLY company_id in $match.\n"
+                "- Do NOT include default filters like isActive or activeListing unless necessary.\n"
+                "- Build subsequent lookups/sorts after you confirm the initial match returns data.\n"
+            )
+
         prompt = f"""
-                Please fix the previously failed query.
+        IMPORTANT:
+                    Please fix the previously failed query.look at the failure signature and the debug info to fix the query.Look at the feedback to make a logical decision to fix the query and make the query with the actual database structure in mind , have a structured format for the query ,identify where the selected collections are in the actual database structure and make the query accordingly.
 
-                Previous error:
-                {state['error']}
+                    Previous error:
+                    {state['error']}
 
-                Previous query:
-                {previous_query}
+                    Previous query:
+                    {json.dumps(previous_query, default=str)}
 
-                Previous feedback:
-                {state.get('feedback', '')}
+                    Execution debug info:
+                    {json.dumps(debug_info, default=str)}
 
-                Actual database structure:
-                - Available collections: {json.dumps(available_collections, default=str)}
-                - Selected collections: {json.dumps(state.get('collections', []), default=str)}
-                - Complete Schemas for all collections: {json.dumps(sample_schemas, default=str)}
+                    Feedback:
+                    {detailed_feedback}
+                    {relax_hint}
 
-                Schema catalog (use fields from here; do not invent):
-                {json.dumps(state.get('schemas', {}), default=str)}
+                    Actual database structure:
+                    - Available collections: {json.dumps(available_collections, default=str)}
+                    - Selected collections: {json.dumps(state.get('collections', []), default=str)}
+                    - Complete Schemas for all collections: {json.dumps(sample_schemas, default=str)}
 
-                User request:
-                {state.get('parsed', '')}
+                    Schema catalog (use fields from here; do not invent):
+                    {json.dumps(state.get('schemas', {}), default=str)}
 
-                Return only a valid JSON query object that the executor can run directly.Do not add any other text or explanation.
-                """
+                    User request:
+                    {state.get('parsed', '')}
+
+                    Return only a valid JSON query object that the executor can run directly. Do not add any other text or explanation.
+                    """
     else:
         print("Building initial query...")
         
@@ -103,44 +143,52 @@ async def build_query_node(state: AgentState) -> AgentState:
 
         # Enhanced prompt with actual database structure
         prompt = (
-        "You are a Professional MongoDB query builder. Return ONE valid JSON object only; no prose or code fences.\n\n"
-        f"Context:\n"
-        f"- Database alias: {alias}\n"
-        f"- Selected collections: {state.get('collections', [])}\n"
-        f"- Parsed user request (intent/constraints):\n{state.get('parsed','')}\n\n"
-        f"ACTUAL DATABASE STRUCTURE:\n"
-        f"- Available collections in database: {json.dumps(available_collections, default=str)}\n"
-        f"- Selected collections (subset of available): {json.dumps(state.get('collections', []), default=str)}\n\n"
-        f"- Complete Schemas for all collections: {json.dumps(sample_schemas, default=str)}\n\n"
-        "Schema catalog (use fields from here; do not invent):\n"
-        f"{json.dumps(state.get('schemas', {}), default=str)}\n\n"
-        "Detected relations (prefer these for $lookup joins):\n"
-        f"{json.dumps(relations, default=str)}\n\n"
-        "Guidance notes (primary candidates, joins, filters, sorts, aggregation hints, ambiguities, report_defaults):\n"
-        f"{json.dumps(notes, default=str)}\n\n"
-        "Task:\n"
-        "- Pick the best primary collection for this specific user request from the ACTUAL available collections.\n"
-        "- Ensure all collections in $lookup stages exist in the actual database structure.\n"
-        "- Output shape (exactly one of):\n"
-        "- Find:\n"
-        '  {{ "primary_collection": "<collection>", "collection": "<collection>", "filters": {{}}, "projection"?: {{}}, "sort"?: {{}}, "limit": 100, "is_aggregate": false }}\n'
-        "- Aggregate:\n"
-        '  {{ "primary_collection": "<collection>", "collection": "<collection>", "pipeline": [{{"$match": {{...}}}}, ...], "is_aggregate": true }}\n'
-        "- Build $lookup stages using relations: from, localField, foreignField, as. Use $unwind if needed.\n"
-        "- Use only field names present in the target collection's schema.\n"
-        "- IMPORTANT: Only reference collections that exist in the actual database structure.\n"
-        "Rules for Query Building:\n"
-        "- Mandatory Fields: include material_name, material_id, available_quantity, company_id, location_id.\n"
-        '- Default Filters: add {{"isActive": true}} and {{"activeListing": true}} unless specified otherwise.\n'
-        "- Location Logic: respect location_id if provided; otherwise follow default like default_location_id.\n"
-        "IMPORTANT: Make the query with the actual database structure in mind , have a structured format for the query ,identify where the selected collections are in the actual database structure and make the query accordingly.\n"
-        "Best Practices (Not strict rules, but important),Put $match and $project early → reduces documents/fields processed downstream, improving performance.Index usage → only $match at the beginning of the pipeline can use indexes effectively.Limit $unwind usage → if arrays are very large, $unwind can blow up the number of documents.Use $facet for multi-result pipelines → allows branching pipelines inside one aggregation.Use $project to rename/reshape documents → keeps only necessary fields.,create the pipeline in any order you think is best and efficient.\n"
-        "Rule of thumb: You can repeat stages.Just remember: order matters — each stage transforms the docs passed from the previous one.\n"
-        " use ISO-8601 dates; validate all fields.\n"
-        "- If is_aggregate is true, include a non-empty pipeline array.\n\n"
-        "Finally:\n"
-        "- Output only the JSON object (find or aggregate). Do not include explanations or code fences.\n"
-        )
+                "You are a professional MongoDB query builder. Return ONE valid JSON object only; no prose, no code fences.\n\n"
+                f"Context:\n"
+                f"- Database alias: {alias}\n"
+                f"- Selected collections: {state.get('collections', [])}\n"
+                f"- Parsed user request (intent/constraints):\n{state.get('parsed','')}\n\n"
+                f"ACTUAL DATABASE STRUCTURE:\n"
+                f"- Available collections: {json.dumps(available_collections, default=str)}\n"
+                f"- Selected collections (subset): {json.dumps(state.get('collections', []), default=str)}\n\n"
+                f"- Complete Schemas for all collections: {json.dumps(sample_schemas, default=str)}\n\n"
+                "Schema catalog (use only these fields; never invent new ones):\n"
+                f"{json.dumps(state.get('schemas', {}), default=str)}\n\n"
+                "Detected relations (create suitable relations from the schemas or use this existing relations for $lookup joins):\n"
+                f"{relations}\n\n"
+                "Guidance notes (joins, filters, sorting, aggregation hints, defaults):\n"
+                f"{notes}\n\n"
+                "Task:\n"
+                "- Select the best primary collection for this request from the ACTUAL database structure.\n"
+                "- Only reference collections that exist in the actual structure.\n"
+                "- Use $lookup joins strictly based on defined relations (from, localField, foreignField, as).\n"
+                "- Use only field names present in the schemas.\n"
+                "- Structured output format (choose exactly one):\n"
+                "- Find:\n"
+                '  {{ "primary_collection": "<collection>", "collection": "<collection>", "filters": {{}}, "projection"?: {{}}, "sort"?: {{}}, "limit": 100, "is_aggregate": false }}\n'
+                "- Aggregate:\n"
+                '  {{ "primary_collection": "<collection>", "collection": "<collection>", "pipeline": [{{"$match": {{...}}}}, ...], "is_aggregate": true }}\n\n'
+                "Rules for Query Building:\n"
+                    "- Mandatory Fields: include material_name, material_id, available_quantity, company_id, location_id.\n"
+                    '- Default Filters: add {{"isActive": true}} and {{"activeListing": true}} unless specified otherwise.\n'
+                    "- Location Logic: respect location_id if provided; otherwise follow default like default_location_id.\n"
+                    "IMPORTANT: Make the query with the actual database structure in mind , have a structured format for the query ,identify where the selected collections are in the actual database structure and make the query accordingly.\n"
+                    "Best Practices (Not strict rules, but important),Put $match and $project early → reduces documents/fields processed downstream, improving performance.Index usage → only $match at the beginning of the pipeline can use indexes effectively.Limit $unwind usage → if arrays are very large, $unwind can blow up the number of documents.Use $facet for multi-result pipelines → allows branching pipelines inside one aggregation.Use $project to rename/reshape documents → keeps only necessary fields.,create the pipeline in any order you think is best and efficient.\n"
+                    "Rule of thumb: You can repeat stages.Just remember: order matters — each stage transforms the docs passed from the previous one.\n"
+                    " use ISO-8601 dates; validate all fields.\n"
+                    "- If is_aggregate is true, include a non-empty pipeline array.\n\n"
+                "Best Practices:\n"
+                "- Place $match and $project early to reduce data processed downstream.\n"
+                "- Index usage: only $match at the beginning can leverage indexes effectively.\n"
+                "- Limit $unwind usage to avoid exploding document counts.or limit to the amount the user wants to see\n"
+                "- Use $facet for multi-result pipelines.\n"
+                "- Use $project to reshape or rename fields and keep only necessary ones.\n"
+                "- Pipelines can repeat stages, but order matters.\n"
+                "- Always use ISO-8601 date format; validate all fields.\n"
+                "- If is_aggregate is true, pipeline must be a non-empty array.\n\n"
+                    "Finally:\n"
+                    "- Output only the JSON object (find or aggregate). No explanations or code fences."
+            )
 
     # 2) Default fallback query (so we always have something to return)
     parsed = {}
@@ -240,8 +288,9 @@ async def build_query_node(state: AgentState) -> AgentState:
     }
     print("=== END BUILD QUERY NODE ===\n")
 
-    if state.get("is_aggregate", False):
-        pipeline = state["query"].get("pipeline", [])
+    # validate new query, not old state
+    if query.get("is_aggregate", False):
+        pipeline = query.get("pipeline", [])
         if not pipeline:
             return {"error": "Aggregate requested but no pipeline provided", "retry_count": state.get("retry_count", 0) + 1}
 

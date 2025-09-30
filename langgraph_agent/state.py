@@ -22,6 +22,7 @@ class AgentState(TypedDict, total=False):
     result: Dict[str, Any]
     error: Optional[str]
     retry_count: int
+    debug_info: Dict[str, Any] 
     
     # Flow control
     redirect_to_choose: bool
@@ -30,4 +31,5 @@ class AgentState(TypedDict, total=False):
     
     # Session management
     mcp_session_manager: Optional[RequestScopedSessionManager]
+    
 

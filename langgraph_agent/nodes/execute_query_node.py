@@ -3,7 +3,7 @@ import json
 import logging
 from langsmith import traceable
 import anyio
-from mcp_server.tools.mcp_langchain_tools import llm_with_mcp_tools
+from mcp_server.tools.mcp_langchain_tools import llm_with_mcp_tools, _find_with_debug, _aggregate_with_debug
 
 log_flow = logging.getLogger("flow")
 log_llm = logging.getLogger("llm")
@@ -19,134 +19,111 @@ def _json_safe(x):
         # fallback stringify for odd types (ObjectId, datetime, etc.)
         return str(x)
 
+MAX_EXEC_RETRIES = 2
+
 @traceable(name="execute_query_node")
 async def execute_query_node(state: AgentState) -> AgentState:
-    """Execute the MongoDB query using LLM with MCP tools"""
-    log_flow.info("NODE_START name=execute_query db=%s is_aggregate=%s", state.get("db"), state.get("is_aggregate"))
-    print(f"\n=== EXECUTE QUERY NODE ===")
-    print(f"Input state: {state}")
-
+    print("\n=== EXECUTE QUERY NODE ===")
+    alias = state.get("db")
     mgr = state.get("mcp_session_manager")
     if not mgr:
-        return {
-            "error": "MCP session manager not found",
-            "retry_count": state.get("retry_count", 0) + 1
-        }
-    
+        print("ERROR: MCP session manager not available")
+        return {"error": "MCP session manager not available", "retry_count": state.get("retry_count", 0) + 1}
+
+    q = state.get("query") or {}
+    collection = q.get("collection")
+    if not collection:
+        print("ERROR: No collection specified in query")
+        return {"error": "No collection specified in query", "retry_count": state.get("retry_count", 0) + 1}
+
+    is_aggr = bool(q.get("is_aggregate"))
     try:
-        alias = state["db"]
-        collections = state.get("collections", [])
-        primary_collection = state.get("query", {}).get("collection", "")
-        
-        if not primary_collection:
-            raise ValueError(f"No collection specified in query. Available collections: {collections}")
-        
-        # System prompt for LLM with MCP tools
-        system = f"""
-            You can call tools to execute MongoDB queries for alias '{alias}'. 
-            Use find_documents (alias, collection, filter, projection, sort, limit) or aggregate_documents (alias, collection, pipeline).
-            Available collections: {collections}
-            Primary collection: {primary_collection}
-            Return only JSON in the schema: {{"result": {{query_result}}, "query_type": "find|aggregate", "summary": "..."}}
-            When you call aggregate_documents , you must include the pipeline array in the tool call arguments, not only in your message content.
-            """
-        
-        user = f"""
-            User query: {state.get('input','')}
-            Parsed request: {state.get('parsed','')}
-            Available collections: {collections}
-            Primary collection: {primary_collection}
-            Query details: {state.get('query', {})}
-
-            Execute the appropriate MongoDB query based on the query details provided.
-            If it's an aggregate query with $lookup stages, use aggregate_documents with the pipeline.
-            If it's a simple find query, use find_documents with the appropriate filters, projection, sort, and limit.
-            """
-        
-        print(f"Executing query using MCP tools...")
-        print(f"Collections: {collections}")
-        print(f"Primary collection: {primary_collection}")
-        print(f"Is aggregate: {state.get('is_aggregate', False)}")
-        
-        
-        
-        with anyio.CancelScope() as scope:
-            ai = await llm_with_mcp_tools(mgr,system, user)
-            if scope.cancel_called:
-                raise Exception(str({"error": "cancelled"}))
-
-        content = (ai.content or "").strip()
-        
-        print(f"LLM response: {content}")
-        
-        try:
-            # Clean the response to extract JSON
-            if content.startswith("```json"): 
-                content = content[7:]
-            if content.endswith("```"): 
-                content = content[:-3]
-            content = content.strip()
-            
-            response_data = json.loads(content)
-            result = response_data.get("result", {})
-            query_type = response_data.get("query_type", "unknown")
-            summary = response_data.get("summary", "No summary provided")
-            no_docs = False
-            
-            if isinstance(result, dict):
-                docs = result.get("documents")
-                if isinstance(docs, list) and len(docs) == 0:
-                    no_docs = True
-                elif result == {}:
-                    no_docs = True
-            elif isinstance(result, list) and len(result) == 0:
-                no_docs = True
-
-            no_results_phrase = "No results found" in (summary or "").lower()
-
-            if no_docs or no_results_phrase:
-                fb = ("Previous query returned no results. Try rebuilding the query using the same context, "
-                "consider alternative collections/joins from relations, and relax/adjust filters if reasonable. "
-                "Keep the supply-chain defaults unless the user overrides them."
-                )
+        if is_aggr:
+            pipeline = q.get("pipeline") or []
+            if not isinstance(pipeline, list) or not pipeline:
+                print("ERROR: Aggregate requested but pipeline missing/empty")
                 return {
-                    "error": summary or "No results found",
-                    "feedback": fb,
-                    "retry_count": state.get("retry_count", 0) + 1
+                    "error": "Aggregate requested but pipeline missing/empty",
+                    "retry_count": state.get("retry_count", 0) + 1,
+                    "feedback": "Pipeline missing or empty in aggregate request."
                 }
-            
-            print(f"Query executed successfully using {query_type}")
-            print(f"Summary: {summary}")
-            
-            result_output = {
-                "result": _json_safe(result),
-                "query_type": query_type,
-                "summary": summary,
+
+            print(f"Executing aggregate on {collection} with {len(pipeline)} stages")
+            result = await _aggregate_with_debug(mgr, alias, collection, pipeline, database=None)
+
+            docs = result.get("documents", [])
+            debug = result.get("debug_info", {})
+            success = result.get("success", True)
+
+            if not success or debug.get("final_count", 0) == 0:
+                empty_after = debug.get("empty_after_stage")
+                fb = (
+                    f"No results after stage {empty_after}: {pipeline[empty_after]}"
+                    if empty_after is not None and empty_after < len(pipeline)
+                    else "No results returned; relax filters or check joins."
+                )
+                print(f"Retry #{state.get('retry_count', 0) + 1} → AGGREGATE EMPTY/ERROR. feedback={fb}")
+                print(f"Debug: {json.dumps(debug, default=str)[:1200]}")
+                return {
+                    "error": "EMPTY_RESULT" if success else "AGGREGATE_FAILED",
+                    "debug_info": debug,
+                    "retry_count": state.get("retry_count", 0) + 1,
+                    "feedback": fb,
+                    "query": q,
+                    "is_aggregate": True,
+                    "failure_signature": {
+                        "kind": "aggregate_empty",
+                        "empty_after_stage": empty_after,
+                        "first_stage_op": list((pipeline[empty_after] or {}).keys())[0] if (empty_after is not None and empty_after < len(pipeline)) else None,
+                    }
+                }
+
+            print(f"AGGREGATE OK. count={debug.get('final_count', len(docs))}")
+            print(f"Sample: {json.dumps((docs[:1] or [{}])[0], default=str)[:400]}")
+            return {
+                "result": {"documents": docs},
+                "debug_info": debug,
+                "query_type": "aggregate",
+                "summary": f"Aggregate on {collection} returned {debug.get('final_count', len(docs))} documents",
                 "error": None
             }
-            
-            print(f"Execute query output: {result_output}")
-            print("=== END EXECUTE QUERY NODE ===\n")
-            log_flow.info("NODE_END name=execute_query result_summary=%s", str(result_output.get("summary",""))[:200])
-            return result_output
-            
-        except Exception as e:
-            # Fallback if LLM response parsing fails
-            result_output = {
-                "error": f"LLM query execution failed: {str(e)}",
-                "retry_count": state.get("retry_count", 0) + 1
+
+        else:
+            filters = q.get("filters") or {}
+            projection = q.get("projection")
+            sort = q.get("sort")
+            limit = q.get("limit", 100)
+            print(f"Executing find on {collection} filters={filters} limit={limit}")
+            result = await _find_with_debug(mgr, alias, collection, database=None,
+                                            filter=filters, projection=projection, sort=sort, limit=limit)
+
+            docs = result.get("documents", [])
+            debug = result.get("debug_info", {})
+            success = result.get("success", True)
+
+            if not success or debug.get("document_count", 0) == 0:
+                fb = f"No documents for filters={filters}. Consider relaxing filters or increasing limit."
+                print(f"FIND EMPTY/ERROR. feedback={fb}")
+                print(f"Debug: {json.dumps(debug, default=str)[:1200]}")
+                return {
+                    "error": "EMPTY_RESULT" if success else "FIND_FAILED",
+                    "debug_info": debug,
+                    "retry_count": state.get("retry_count", 0) + 1,
+                    "feedback": fb,
+                    "query": q,
+                    "is_aggregate": False
+                }
+
+            print(f"FIND OK. count={debug.get('document_count', len(docs))}")
+            print(f"Sample: {json.dumps((docs[:1] or [{}])[0], default=str)[:400]}")
+            return {
+                "result": {"documents": docs},
+                "debug_info": debug,
+                "query_type": "find",
+                "summary": f"Find on {collection} returned {debug.get('document_count', len(docs))} documents",
+                "error": None
             }
-            print(f"Error: {result_output['error']}")
-            print("=== END EXECUTE QUERY NODE ===\n")
-            log_flow.info("NODE_ERROR name=execute_query error=%s", result_output["error"])
-            return result_output
-        
+
     except Exception as e:
-        result_output = {
-            "error": str(e),
-            "retry_count": state.get("retry_count", 0) + 1
-        }
-        print(f"Execute query output: {result_output}")
-        print("=== END EXECUTE QUERY NODE ===\n")
-        log_flow.info("NODE_ERROR name=execute_query error=%s", result_output["error"])
-        return result_output
+        print(f"EXECUTE ERROR: {e}")
+        return {"error": str(e), "retry_count": state.get("retry_count", 0) + 1}

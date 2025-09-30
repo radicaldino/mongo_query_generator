@@ -1,4 +1,3 @@
-# langgraph_agent/nodes/mcp_langchain_tools.py
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 from langchain.tools import StructuredTool
@@ -11,6 +10,7 @@ from mcp_server.session_manager import RequestScopedSessionManager
 import anyio
 import json
 import logging
+import time
 
 log_flow = logging.getLogger("flow")
 log_llm = logging.getLogger("llm")
@@ -123,6 +123,9 @@ class AggregateArgs(BaseModel):
     pipeline: List[Dict[str, Any]] = Field(default_factory=list)
     database: Optional[str] = None
 
+
+
+
 # Tool implementations
 async def _list_collections(mgr: RequestScopedSessionManager, alias: str, database: Optional[str] = None):
     if not mgr:
@@ -186,6 +189,176 @@ async def _aggregate(mgr: RequestScopedSessionManager, alias: str, collection: s
     if isinstance(data, list):
         return {"documents": data}
     return data or {}
+
+async def _aggregate_with_debug(mgr: RequestScopedSessionManager, alias: str, collection: str, pipeline: list, database: Optional[str] = None):
+    """Run aggregate stage-by-stage to detect where results drop to zero; returns plain dict with debug info."""
+    if not mgr:
+        raise RuntimeError("MCP session manager not provided")
+    session = mgr.get(alias)
+
+    stages_info = []
+    last_docs = []
+    started = time.time()
+    empty_after_stage = None
+    last_working_stage = None
+    error_msgs = []
+
+    for i, stage in enumerate(pipeline or []):
+        partial = pipeline[: i + 1]
+        stage_start = time.time()
+        try:
+            res = await call_tool_with_timeout(
+                mgr,
+                alias,
+                "aggregate",
+                {"database": (database or db_name_for_alias(alias)), "collection": collection, "pipeline": partial},
+                timeout_s=30.0,
+            )
+            stage_time_ms = (time.time() - stage_start) * 1000.0
+            data = await _as_json(res)
+            if isinstance(data, list):
+                docs = data
+            elif isinstance(data, dict):
+                docs = data.get("documents") or data.get("data") or []
+            else:
+                docs = []
+            count = len(docs)
+
+            stages_info.append({
+                "stage_index": i,
+                "stage": stage,
+                "documents_after_stage": count,
+                "execution_time_ms": stage_time_ms,
+                "success": True,
+            })
+
+            last_docs = docs
+            if count == 0 and empty_after_stage is None:
+                empty_after_stage = i
+                last_working_stage = (i - 1) if i > 0 else None
+                # We can stop early once it’s empty
+                break
+        except Exception as e:
+            stage_time_ms = (time.time() - stage_start) * 1000.0
+            msg = f"Stage {i} error: {e}"
+            error_msgs.append(msg)
+            stages_info.append({
+                "stage_index": i,
+                "stage": stage,
+                "documents_after_stage": 0,
+                "execution_time_ms": stage_time_ms,
+                "success": False,
+                "error": str(e),
+            })
+            # stop on first failure
+            break
+
+    total_time_ms = (time.time() - started) * 1000.0
+    final_count = len(last_docs) if isinstance(last_docs, list) else 0
+    success = len(error_msgs) == 0
+
+    debug_info = {
+        "collection": collection,
+        "pipeline_length": len(pipeline or []),
+        "stages": stages_info,
+        "final_count": final_count,
+        "execution_time_ms": total_time_ms,
+        "errors": error_msgs,
+        "success": success,
+        "empty_after_stage": empty_after_stage,
+        "last_working_stage": last_working_stage,
+    }
+
+    return {
+        "documents": last_docs if isinstance(last_docs, list) else [],
+        "debug_info": debug_info,
+        "success": success,
+    }
+
+
+async def _find_with_debug(mgr: RequestScopedSessionManager, alias: str, collection: str, database: Optional[str] = None,
+                           filter: Optional[Dict[str, Any]] = None,
+                           projection: Optional[Dict[str, int]] = None,
+                           sort: Optional[Dict[str, int]] = None,
+                           limit: int = 100):
+    """Run find with timing and basic debug info; returns plain dict with debug info."""
+    if not mgr:
+        raise RuntimeError("MCP session manager not provided")
+    session = mgr.get(alias)
+
+    started = time.time()
+    try:
+        res = await call_tool_with_timeout(
+            mgr,
+            alias,
+            "find",
+            {
+                "database": (database or db_name_for_alias(alias)),
+                "collection": collection,
+                "filter": (filter or {}),
+                "projection": projection,
+                "sort": sort,
+                "limit": limit,
+            },
+            timeout_s=25.0,
+        )
+        total_time_ms = (time.time() - started) * 1000.0
+        docs = _extract_documents(res)
+        doc_count = len(docs) if isinstance(docs, list) else 0
+
+        debug_info = {
+            "collection": collection,
+            "filter": (filter or {}),
+            "projection": projection,
+            "sort": sort,
+            "limit": limit,
+            "execution_time_ms": total_time_ms,
+            "document_count": doc_count,
+            "success": True,
+        }
+
+        return {
+            "documents": docs if isinstance(docs, list) else [],
+            "debug_info": debug_info,
+            "success": True,
+        }
+    except Exception as e:
+        total_time_ms = (time.time() - started) * 1000.0
+        debug_info = {
+            "collection": collection,
+            "filter": (filter or {}),
+            "projection": projection,
+            "sort": sort,
+            "limit": limit,
+            "execution_time_ms": total_time_ms,
+            "error": str(e),
+            "success": False,
+        }
+        return {
+            "documents": [],
+            "debug_info": debug_info,
+            "success": False,
+        }
+
+def _extract_documents(result):
+    """Extract documents from MCP result"""
+    if not result:
+        return []
+    
+    # Handle different MCP result formats
+    if hasattr(result, 'content'):
+        for part in result.content or []:
+            if hasattr(part, 'text'):
+                try:
+                    data = json.loads(part.text)
+                    if isinstance(data, dict):
+                        return data.get('documents', data.get('data', []))
+                    elif isinstance(data, list):
+                        return data
+                except:
+                    pass
+    
+    return []
 
 def build_request_mcp_tools(mgr: RequestScopedSessionManager) -> List[StructuredTool]:
     """Build MCP tools with request-scoped session manager"""
